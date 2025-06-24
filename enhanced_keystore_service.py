@@ -22,12 +22,23 @@ CORS(app)  # Enable CORS for web frontend
 
 # Configuration
 DATABASE = 'keystore.db'
-SECRET_KEY = os.environ.get('SECRET_KEY', secrets.token_urlsafe(32))
-ENCRYPTION_KEY = os.environ.get('ENCRYPTION_KEY', Fernet.generate_key())
-JWT_EXPIRY_HOURS = 24
+# Fetch SECRET_KEY and ENCRYPTION_KEY from environment variables,
+# providing strong defaults only if they are entirely missing.
+# In a production environment, these should ALWAYS be set securely externally.
+SECRET_KEY = os.environ.get('SECRET_KEY')
+ENCRYPTION_KEY = os.environ.get('ENCRYPTION_KEY')
 
-# Initialize encryption
-cipher = Fernet(ENCRYPTION_KEY)
+# Ensure keys are set, otherwise print a warning and use generated ones for development
+if not SECRET_KEY:
+    SECRET_KEY = secrets.token_urlsafe(32)
+    print(f"WARNING: SECRET_KEY not set in environment. Using newly generated key: {SECRET_KEY}")
+if not ENCRYPTION_KEY:
+    ENCRYPTION_KEY = Fernet.generate_key().decode()
+    print(f"WARNING: ENCRYPTION_KEY not set in environment. Using newly generated key: {ENCRYPTION_KEY}")
+
+cipher = Fernet(ENCRYPTION_KEY.encode()) # Fernet key must be bytes
+
+JWT_EXPIRY_HOURS = 24
 
 def get_db():
     """Get database connection."""
@@ -129,8 +140,10 @@ def verify_jwt_token(token):
         payload = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
         return payload
     except jwt.ExpiredSignatureError:
+        print("Token expired.")
         return None
-    except jwt.InvalidTokenError:
+    except jwt.InvalidTokenError as e:
+        print(f"Invalid token: {e}")
         return None
 
 def require_auth(f):
@@ -139,12 +152,12 @@ def require_auth(f):
     def decorated_function(*args, **kwargs):
         auth_header = request.headers.get('Authorization')
         if not auth_header or not auth_header.startswith('Bearer '):
-            return jsonify({'error': 'Authentication required'}), 401
+            return jsonify({'error': 'Authentication required', 'details': 'No token provided'}), 401
         
         token = auth_header.split(' ')[1]
         payload = verify_jwt_token(token)
         if not payload:
-            return jsonify({'error': 'Invalid or expired token'}), 401
+            return jsonify({'error': 'Invalid or expired token', 'details': 'Token verification failed'}), 401
         
         g.current_user = payload
         return f(*args, **kwargs)
@@ -159,17 +172,20 @@ def require_admin(f):
         return f(*args, **kwargs)
     return decorated_function
 
-def log_access(action, key_name=None, success=True):
+def log_access(action, key_name=None, success=True, user_id=None, username=None):
     """Log user access to the database."""
     db = get_db()
-    user = g.get('current_user', {})
     
+    # Use g.current_user if available, otherwise use provided user_id/username
+    effective_user_id = user_id if user_id is not None else g.get('current_user', {}).get('user_id')
+    effective_username = username if username is not None else g.get('current_user', {}).get('username')
+
     db.execute('''
         INSERT INTO access_log (user_id, user_name, key_name, action, ip_address, user_agent, success)
         VALUES (?, ?, ?, ?, ?, ?, ?)
     ''', (
-        user.get('user_id'),
-        user.get('username'),
+        effective_user_id,
+        effective_username,
         key_name,
         action,
         request.remote_addr,
@@ -196,6 +212,8 @@ def login():
     ).fetchone()
     
     if not user or not check_password_hash(user['password_hash'], password):
+        # Log failed login attempt
+        log_access('login_attempt', key_name=None, success=False, username=username, user_id=user['id'] if user else None)
         return jsonify({'error': 'Invalid credentials'}), 401
     
     # Update last login
@@ -207,6 +225,9 @@ def login():
     
     # Generate JWT token
     token = generate_jwt_token(user['id'], user['username'], user['role'])
+    
+    # Log successful login
+    log_access('login_success', key_name=None, success=True, user_id=user['id'], username=user['username'])
     
     return jsonify({
         'token': token,
@@ -278,13 +299,16 @@ def get_key(key_name):
         ).fetchone()
     
     if not key:
+        log_access('view_key', key_name, success=False)
         return jsonify({'error': 'Key not found'}), 404
     
     # Decrypt the API key
     try:
         decrypted_key = cipher.decrypt(key['encrypted_value'].encode()).decode()
     except Exception as e:
-        return jsonify({'error': 'Failed to decrypt key'}), 500
+        log_access('view_key', key_name, success=False)
+        print(f"Decryption error for key {key_name}: {e}") # Log internal error
+        return jsonify({'error': 'Failed to decrypt key', 'details': str(e)}), 500
     
     log_access('view_key', key_name)
     return jsonify({
@@ -302,21 +326,25 @@ def add_key():
     data = request.get_json()
     
     if not data or 'key_name' not in data or 'api_key' not in data:
+        log_access('add_key', key_name=data.get('key_name'), success=False)
         return jsonify({'error': 'Key name and API key are required'}), 400
     
-    key_name = data['key_name']
+    key_name = data['key_name'].strip()
     api_key = data['api_key']
-    description = data.get('description', '')
+    description = data.get('description', '').strip()
     
     # Validate key name
-    if not key_name.strip():
+    if not key_name:
+        log_access('add_key', key_name=key_name, success=False)
         return jsonify({'error': 'Key name cannot be empty'}), 400
     
     # Encrypt the API key
     try:
         encrypted_key = cipher.encrypt(api_key.encode()).decode()
     except Exception as e:
-        return jsonify({'error': 'Failed to encrypt key'}), 500
+        log_access('add_key', key_name=key_name, success=False)
+        print(f"Encryption error for key {key_name}: {e}") # Log internal error
+        return jsonify({'error': 'Failed to encrypt key', 'details': str(e)}), 500
     
     db = get_db()
     
@@ -331,7 +359,8 @@ def add_key():
         return jsonify({'message': 'API key added successfully'}), 201
         
     except sqlite3.IntegrityError:
-        return jsonify({'error': 'Key name already exists'}), 409
+        log_access('add_key', key_name, success=False)
+        return jsonify({'error': f'Key name "{key_name}" already exists'}), 409
 
 @app.route('/keys/<key_name>', methods=['PUT'])
 @require_auth
@@ -340,7 +369,8 @@ def update_key(key_name):
     data = request.get_json()
     
     if not data:
-        return jsonify({'error': 'No data provided'}), 400
+        log_access('update_key', key_name, success=False, action_details='No data provided')
+        return jsonify({'error': 'No data provided for update'}), 400
     
     db = get_db()
     
@@ -357,7 +387,8 @@ def update_key(key_name):
         ).fetchone()
     
     if not key:
-        return jsonify({'error': 'Key not found'}), 404
+        log_access('update_key', key_name, success=False, action_details='Key not found or unauthorized')
+        return jsonify({'error': 'Key not found or unauthorized to update'}), 404
     
     # Update fields
     update_fields = []
@@ -369,19 +400,23 @@ def update_key(key_name):
             update_fields.append('encrypted_value = ?')
             params.append(encrypted_key)
         except Exception as e:
-            return jsonify({'error': 'Failed to encrypt key'}), 500
+            log_access('update_key', key_name, success=False, action_details=f'Encryption failed: {e}')
+            return jsonify({'error': 'Failed to encrypt key', 'details': str(e)}), 500
     
     if 'description' in data:
+        description = data['description'].strip()
         update_fields.append('description = ?')
-        params.append(data['description'])
+        params.append(description)
     
-    if update_fields:
-        update_fields.append('updated_at = CURRENT_TIMESTAMP')
-        params.append(key_name)
-        
-        query = f"UPDATE api_keys SET {', '.join(update_fields)} WHERE key_name = ?"
-        db.execute(query, params)
-        db.commit()
+    if not update_fields:
+        return jsonify({'message': 'No fields provided for update'}), 200 # No actual change
+
+    update_fields.append('updated_at = CURRENT_TIMESTAMP')
+    params.append(key_name)
+    
+    query = f"UPDATE api_keys SET {', '.join(update_fields)} WHERE key_name = ?"
+    db.execute(query, params)
+    db.commit()
     
     log_access('update_key', key_name)
     return jsonify({'message': 'API key updated successfully'})
@@ -405,7 +440,8 @@ def delete_key(key_name):
         ).fetchone()
     
     if not key:
-        return jsonify({'error': 'Key not found'}), 404
+        log_access('delete_key', key_name, success=False)
+        return jsonify({'error': 'Key not found or unauthorized to delete'}), 404
     
     db.execute('DELETE FROM api_keys WHERE key_name = ?', (key_name,))
     db.commit()
@@ -417,25 +453,36 @@ def delete_key(key_name):
 @app.route('/logs', methods=['GET'])
 @require_auth
 def get_logs():
-    """Get access logs."""
+    """Get access logs with optional filtering."""
     db = get_db()
     
-    # Build query based on user role
-    if g.current_user['role'] == 'admin':
-        # Admins can see all logs
-        logs = db.execute('''
-            SELECT * FROM access_log 
-            ORDER BY timestamp DESC 
-            LIMIT 100
-        ''').fetchall()
-    else:
-        # Regular users see only their logs
-        logs = db.execute('''
-            SELECT * FROM access_log 
-            WHERE user_id = ? 
-            ORDER BY timestamp DESC 
-            LIMIT 50
-        ''', (g.current_user['user_id'],)).fetchall()
+    user_name_filter = request.args.get('user_name')
+    action_filter = request.args.get('action')
+    ip_address_filter = request.args.get('ip_address')
+
+    query_parts = ["SELECT * FROM access_log WHERE 1=1"]
+    params = []
+
+    if g.current_user['role'] != 'admin':
+        query_parts.append("AND user_id = ?")
+        params.append(g.current_user['user_id'])
+    
+    if user_name_filter:
+        query_parts.append("AND user_name LIKE ?")
+        params.append(f"%{user_name_filter}%")
+    if action_filter:
+        query_parts.append("AND action LIKE ?")
+        params.append(f"%{action_filter}%")
+    if ip_address_filter:
+        query_parts.append("AND ip_address LIKE ?")
+        params.append(f"%{ip_address_filter}%")
+
+    query_parts.append("ORDER BY timestamp DESC")
+    limit = 100 if g.current_user['role'] == 'admin' else 50
+    query_parts.append(f"LIMIT {limit}") # Use f-string for limit as it's an int
+
+    query = " ".join(query_parts)
+    logs = db.execute(query, tuple(params)).fetchall()
     
     logs_list = []
     for log in logs:
@@ -448,6 +495,7 @@ def get_logs():
             'success': bool(log['success'])
         })
     
+    log_access('list_logs') # Log the action of viewing logs
     return jsonify({'logs': logs_list})
 
 # User management endpoints (Admin only)
@@ -485,20 +533,24 @@ def add_user():
     data = request.get_json()
     
     if not data or 'username' not in data or 'password' not in data:
+        log_access('add_user', key_name=None, success=False, action_details='Missing username/password')
         return jsonify({'error': 'Username and password are required'}), 400
     
-    username = data['username']
+    username = data['username'].strip()
     password = data['password']
-    role = data.get('role', 'user')
+    role = data.get('role', 'user').strip()
     
     # Validate inputs
-    if not username.strip():
+    if not username:
+        log_access('add_user', key_name=None, success=False, action_details='Username empty')
         return jsonify({'error': 'Username cannot be empty'}), 400
     
     if len(password) < 6:
+        log_access('add_user', key_name=None, success=False, action_details='Password too short')
         return jsonify({'error': 'Password must be at least 6 characters'}), 400
     
     if role not in ['user', 'admin']:
+        log_access('add_user', key_name=None, success=False, action_details=f'Invalid role: {role}')
         return jsonify({'error': 'Role must be either "user" or "admin"'}), 400
     
     # Hash password
@@ -513,11 +565,16 @@ def add_user():
         ''', (username, password_hash, role))
         db.commit()
         
-        log_access('add_user', username)
+        log_access('add_user', username=username)
         return jsonify({'message': 'User added successfully'}), 201
         
     except sqlite3.IntegrityError:
-        return jsonify({'error': 'Username already exists'}), 409
+        log_access('add_user', username=username, success=False, action_details='Username already exists')
+        return jsonify({'error': f'Username "{username}" already exists'}), 409
+    except Exception as e:
+        log_access('add_user', username=username, success=False, action_details=f'Server error: {e}')
+        print(f"Error adding user: {e}")
+        return jsonify({'error': 'Internal server error while adding user'}), 500
 
 @app.route('/users/<int:user_id>', methods=['PUT'])
 @require_auth
@@ -527,13 +584,15 @@ def update_user(user_id):
     data = request.get_json()
     
     if not data:
-        return jsonify({'error': 'No data provided'}), 400
+        log_access('update_user', key_name=None, success=False, user_id=user_id, action_details='No data provided')
+        return jsonify({'error': 'No data provided for update'}), 400
     
     db = get_db()
     
     # Check if user exists
     user = db.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone()
     if not user:
+        log_access('update_user', key_name=None, success=False, user_id=user_id, action_details='User not found')
         return jsonify({'error': 'User not found'}), 404
     
     # Update fields
@@ -542,6 +601,7 @@ def update_user(user_id):
     
     if 'password' in data:
         if len(data['password']) < 6:
+            log_access('update_user', key_name=None, success=False, user_id=user_id, action_details='Password too short')
             return jsonify({'error': 'Password must be at least 6 characters'}), 400
         password_hash = generate_password_hash(data['password'])
         update_fields.append('password_hash = ?')
@@ -549,6 +609,7 @@ def update_user(user_id):
     
     if 'role' in data:
         if data['role'] not in ['user', 'admin']:
+            log_access('update_user', key_name=None, success=False, user_id=user_id, action_details=f'Invalid role: {data["role"]}')
             return jsonify({'error': 'Role must be either "user" or "admin"'}), 400
         update_fields.append('role = ?')
         params.append(data['role'])
@@ -557,13 +618,15 @@ def update_user(user_id):
         update_fields.append('is_active = ?')
         params.append(bool(data['is_active']))
     
-    if update_fields:
-        params.append(user_id)
-        query = f"UPDATE users SET {', '.join(update_fields)} WHERE id = ?"
-        db.execute(query, params)
-        db.commit()
+    if not update_fields:
+        return jsonify({'message': 'No fields provided for update'}), 200 # No actual change
+
+    params.append(user_id)
+    query = f"UPDATE users SET {', '.join(update_fields)} WHERE id = ?"
+    db.execute(query, params)
+    db.commit()
     
-    log_access('update_user', user['username'])
+    log_access('update_user', username=user['username'])
     return jsonify({'message': 'User updated successfully'})
 
 @app.route('/users/<int:user_id>', methods=['DELETE'])
@@ -576,21 +639,28 @@ def delete_user(user_id):
     # Check if user exists
     user = db.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone()
     if not user:
+        log_access('delete_user', key_name=None, success=False, user_id=user_id, action_details='User not found')
         return jsonify({'error': 'User not found'}), 404
     
     # Prevent admin from deleting themselves
     if user_id == g.current_user['user_id']:
+        log_access('delete_user', key_name=None, success=False, user_id=user_id, action_details='Attempt to self-delete')
         return jsonify({'error': 'Cannot delete your own account'}), 400
     
-    # Delete user's API keys first
-    db.execute('DELETE FROM api_keys WHERE owner_id = ?', (user_id,))
-    
-    # Delete user
-    db.execute('DELETE FROM users WHERE id = ?', (user_id,))
-    db.commit()
-    
-    log_access('delete_user', user['username'])
-    return jsonify({'message': 'User deleted successfully'})
+    try:
+        # Delete user's API keys first
+        db.execute('DELETE FROM api_keys WHERE owner_id = ?', (user_id,))
+        
+        # Delete user
+        db.execute('DELETE FROM users WHERE id = ?', (user_id,))
+        db.commit()
+        
+        log_access('delete_user', username=user['username'])
+        return jsonify({'message': 'User deleted successfully'})
+    except Exception as e:
+        log_access('delete_user', username=user['username'], success=False, action_details=f'Server error: {e}')
+        print(f"Error deleting user {user_id}: {e}")
+        return jsonify({'error': 'Internal server error while deleting user'}), 500
 
 # Static file serving for frontend
 @app.route('/')
@@ -620,7 +690,10 @@ def not_found(error):
 
 @app.errorhandler(500)
 def internal_error(error):
-    return jsonify({'error': 'Internal server error'}), 500
+    # Log the full exception for debugging
+    import traceback
+    traceback.print_exc()
+    return jsonify({'error': 'Internal server error', 'details': str(error)}), 500
 
 if __name__ == '__main__':
     print("Initializing API Key Management Service...")
@@ -636,9 +709,10 @@ if __name__ == '__main__':
     print("User  - Username: user,  Password: user123")
     print("="*50 + "\n")
     
-    print(f"Encryption key: {ENCRYPTION_KEY.decode() if isinstance(ENCRYPTION_KEY, bytes) else ENCRYPTION_KEY}")
+    print(f"Encryption key: {ENCRYPTION_KEY}")
     print(f"JWT Secret: {SECRET_KEY}")
     
     # Run the application
     print("Starting server on http://localhost:5000")
     app.run(debug=True, host='0.0.0.0', port=5000)
+
