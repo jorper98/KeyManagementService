@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  keystore:
+    build: .
+    container_name: api-keystore
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_ENV=production
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-this}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-}
+      - DATABASE=/app/data/keystore.db
+    volumes:
+      - keystore_data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - keystore_network
+
+  # Optional: Add a reverse proxy (nginx)
+  nginx:
+    image: nginx:alpine
+    container_name: keystore-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro  # Mount SSL certificates if you have them
+    depends_on:
+      - keystore
+    restart: unless-stopped
+    networks:
+      - keystore_network
+    profiles:
+      - with-nginx
+
+volumes:
+  keystore_data:
+    driver: local
+
+networks:
+  keystore_network:
+    driver: bridge
+    
