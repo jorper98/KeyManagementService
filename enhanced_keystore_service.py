@@ -21,7 +21,10 @@ app = Flask(__name__)
 CORS(app)  # Enable CORS for web frontend
 
 # Configuration
-DATABASE = 'keystore.db'
+# FIX: Correctly read DATABASE path from environment variable,
+# defaulting to a path within the /app/data volume.
+DATABASE = os.environ.get('DATABASE', '/app/data/keystore.db')
+
 # Fetch SECRET_KEY and ENCRYPTION_KEY from environment variables,
 # providing strong defaults only if they are entirely missing.
 # In a production environment, these should ALWAYS be set securely externally.
