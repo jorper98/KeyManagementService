@@ -2,3 +2,7 @@
 DevOnly/
 node_modules
 backups/
+*.log*
+# Ignore OS-specific files
+.DS_Store
+Thumbs.db

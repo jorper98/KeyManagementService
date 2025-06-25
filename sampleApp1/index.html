@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Keystore Chatbot Sample</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">
+            Keystore Chatbot 🤖
+        </div>
+        <div class="chat-messages" id="chatMessages">
+            <!-- Chat messages will be loaded here -->
+        </div>
+        <div class="chat-input-area">
+            <input type="text" id="userInput" class="chat-input" placeholder="Type your message..." disabled>
+            <button id="sendButton" class="send-button" disabled>Send</button>
+        </div>
+    </div>
+
+    <!-- API Key/Token Setup Modal -->
+    <div id="setupModal" class="setup-modal">
+        <div class="setup-modal-content">
+            <h2>Chatbot Setup</h2>
+            <p>Enter your Keystore JWT Token and the name of your stored Generative AI API Key.</p>
+            <div style="color: #dc3545; font-size: 0.85rem; margin-top: 10px;">
+                <strong>Security Warning:</strong> For production, API keys should be accessed via a secure backend, not directly in client-side code. This sample is for demonstration only.
+            </div>
+            <br>
+            <label for="keystoreToken">Keystore JWT Token:</label>
+            <input type="text" id="keystoreToken" placeholder="Paste your JWT Token" required>
+            
+            <label for="generativeAiKeyName">Generative AI Key Name (in Keystore):</label>
+            <input type="text" id="generativeAiKeyName" placeholder="e.g., MyOpenAIKey" required>
+            
+            <button id="saveSetupButton" class="setup-modal-button">Start Chat</button>
+            <div id="setupError" style="color: red; margin-top: 10px;"></div>
+        </div>
+    </div>
+
+    <script>
+        // Keystore Service URL
+        const KEYSTORE_API_BASE = 'http://localhost:5000';
+        const GENERATIVE_AI_MODEL = 'gemini-2.0-flash'; // Or 'gemini-pro', etc.
+
+        let jwtToken = '';
+        let generativeAiApiKey = '';
+        let chatHistory = []; // Stores messages in format { role: 'user'/'model', parts: [{ text: '...' }] }
+
+        // DOM Elements
+        const chatMessagesDiv = document.getElementById('chatMessages');
+        const userInput = document.getElementById('userInput');
+        const sendButton = document.getElementById('sendButton');
+        const setupModal = document.getElementById('setupModal');
+        const keystoreTokenInput = document.getElementById('keystoreToken');
+        const generativeAiKeyNameInput = document.getElementById('generativeAiKeyName');
+        const saveSetupButton = document.getElementById('saveSetupButton');
+        const setupErrorDiv = document.getElementById('setupError');
+
+        // Event Listeners
+        sendButton.addEventListener('click', sendMessage);
+        userInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+        saveSetupButton.addEventListener('click', setupChatbot);
+
+        // Function to display messages in the chat UI
+        function appendMessage(sender, text) {
+            const messageBubble = document.createElement('div');
+            messageBubble.classList.add('message-bubble');
+            messageBubble.classList.add(sender === 'user' ? 'user-message' : 'bot-message');
+            messageBubble.textContent = text;
+            chatMessagesDiv.appendChild(messageBubble);
+            chatMessagesDiv.scrollTop = chatMessagesDiv.scrollHeight; // Auto-scroll to bottom
+        }
+
+        // Function to show/hide loading indicator
+        function showLoading(show) {
+            if (show) {
+                sendButton.innerHTML = '<div class="loading-spinner"></div>';
+                sendButton.disabled = true;
+                userInput.disabled = true;
+            } else {
+                sendButton.innerHTML = 'Send';
+                sendButton.disabled = false;
+                userInput.disabled = false;
+                userInput.focus();
+            }
+        }
+
+        // --- Chatbot Logic ---
+        async function setupChatbot() {
+            setupErrorDiv.textContent = '';
+            jwtToken = keystoreTokenInput.value.trim();
+            const keyName = generativeAiKeyNameInput.value.trim();
+
+            if (!jwtToken || !keyName) {
+                setupErrorDiv.textContent = 'Please fill in both fields.';
+                return;
+            }
+
+            saveSetupButton.innerHTML = '<div class="loading-spinner"></div> Fetching Key...';
+            saveSetupButton.disabled = true;
+
+            try {
+                // 1. Retrieve Generative AI API Key from Keystore
+                const response = await fetch(`${KEYSTORE_API_BASE}/keys/${keyName}`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${jwtToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(`Failed to get API key from Keystore: ${errorData.error || response.statusText}`);
+                }
+
+                const data = await response.json();
+                generativeAiApiKey = data.api_key; // This is the actual LLM API key!
+
+                // 2. Hide setup modal and enable chat
+                setupModal.style.display = 'none';
+                userInput.disabled = false;
+                sendButton.disabled = false;
+                userInput.focus();
+                appendMessage('bot', 'Hello! I am ready to chat. Ask me anything!');
+
+            } catch (error) {
+                console.error('Setup error:', error);
+                setupErrorDiv.textContent = `Setup failed: ${error.message}`;
+            } finally {
+                saveSetupButton.innerHTML = 'Start Chat';
+                saveSetupButton.disabled = false;
+            }
+        }
+
+        async function sendMessage() {
+            const userText = userInput.value.trim();
+            if (userText === '') return;
+
+            appendMessage('user', userText);
+            userInput.value = '';
+            showLoading(true);
+
+            // Add user message to chat history for context
+            chatHistory.push({ role: 'user', parts: [{ text: userText }] });
+
+            try {
+                // 3. Call Generative AI API
+                const payload = {
+                    contents: chatHistory,
+                    generationConfig: {
+                        temperature: 0.7,
+                        maxOutputTokens: 200,
+                    },
+                };
+                
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GENERATIVE_AI_MODEL}:generateContent?key=${generativeAiApiKey}`;
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`Generative AI API error: ${response.status} ${response.statusText} - ${errorText}`);
+                }
+
+                const result = await response.json();
+
+                if (result.candidates && result.candidates.length > 0 &&
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+                    
+                    const botResponseText = result.candidates[0].content.parts[0].text;
+                    appendMessage('bot', botResponseText);
+                    // Add bot message to chat history
+                    chatHistory.push({ role: 'model', parts: [{ text: botResponseText }] });
+
+                } else {
+                    appendMessage('bot', 'Sorry, I could not generate a response.');
+                    console.warn('Unexpected Generative AI response structure:', result);
+                }
+
+            } catch (error) {
+                appendMessage('bot', `Error: ${error.message}`);
+                console.error('Generative AI API call failed:', error);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // Helper for copying to clipboard (from main app) - not directly used here but good to have
+        function copyToClipboard(text) {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed'; // Avoid scrolling to bottom
+            textarea.style.opacity = 0;
+            document.body.appendChild(textarea);
+            textarea.focus();
+            textarea.select();
+            try {
+                document.execCommand('copy');
+            } catch (err) {
+                console.error('Failed to copy text: ', err);
+            }
+            document.body.removeChild(textarea);
+        }
+    </script>
+</body>
+</html>

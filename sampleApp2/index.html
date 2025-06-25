@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Key Demo App2 - Secure Chatbot</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">
+            API Key Demo App2 - Secure Chatbot 🤖
+        </div>
+        <div class="chat-messages" id="chatMessages">
+            <div class="message-bubble bot-message">Hello! I am a secure chatbot. I get my generative AI API key from your Keystore service via my backend. Ask me anything!</div>
+        </div>
+        <div class="chat-input-area">
+            <input type="text" id="userInput" class="chat-input" placeholder="Type your message...">
+            <button id="sendButton" class="send-button">Send</button>
+        </div>
+    </div>
+
+    <script>
+        // DOM Elements
+        const chatMessagesDiv = document.getElementById('chatMessages');
+        const userInput = document.getElementById('userInput');
+        const sendButton = document.getElementById('sendButton');
+
+        // Event Listeners
+        sendButton.addEventListener('click', sendMessage);
+        userInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        // Function to display messages in the chat UI
+        function appendMessage(sender, text) {
+            const messageBubble = document.createElement('div');
+            messageBubble.classList.add('message-bubble');
+            messageBubble.classList.add(sender === 'user' ? 'user-message' : 'bot-message');
+            messageBubble.textContent = text;
+            chatMessagesDiv.appendChild(messageBubble);
+            chatMessagesDiv.scrollTop = chatMessagesDiv.scrollHeight; // Auto-scroll to bottom
+        }
+
+        // Function to show/hide loading indicator
+        function showLoading(show) {
+            if (show) {
+                sendButton.innerHTML = '<div class="loading-spinner"></div>';
+                sendButton.disabled = true;
+                userInput.disabled = true;
+            } else {
+                sendButton.innerHTML = 'Send';
+                sendButton.disabled = false;
+                userInput.disabled = false;
+                userInput.focus();
+            }
+        }
+
+        // --- Chatbot Logic (Frontend calls its own backend) ---
+        async function sendMessage() {
+            const userText = userInput.value.trim();
+            if (userText === '') return;
+
+            appendMessage('user', userText);
+            userInput.value = '';
+            showLoading(true);
+
+            try {
+                // Call sampleApp2's backend chat endpoint
+                const response = await fetch('/chat', { // Calls its own backend
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt: userText })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(`Chatbot backend error: ${errorData.error || response.statusText}`);
+                }
+
+                const data = await response.json();
+                appendMessage('bot', data.response);
+
+            } catch (error) {
+                appendMessage('bot', `Error: ${error.message}`);
+                console.error('Frontend chat call failed:', error);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // Helper for copying to clipboard (not directly used in this chatbot, but kept for consistency)
+        function copyToClipboard(text) {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed'; // Avoid scrolling to bottom
+            textarea.style.opacity = 0;
+            document.body.appendChild(textarea);
+            textarea.focus();
+            textarea.select();
+            try {
+                document.execCommand('copy');
+            } catch (err) {
+                console.error('Failed to copy text: ', err);
+            }
+            document.body.removeChild(textarea);
+        }
+    </script>
+</body>
+</html>
