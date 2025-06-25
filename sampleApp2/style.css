@@ -45,31 +45,169 @@ body {
     padding-bottom: 10px;
     display: flex;
     flex-direction: column;
-    gap: 10px; /* Space between messages */
+    gap: 10px; /* Space between message groups */
+}
+
+/* Message Group to wrap bubble and counter */
+.message-group {
+    display: flex;
+    flex-direction: column;
+    max-width: 85%; /* Limit width of the group */
+    margin-bottom: 10px; /* Space between groups */
+}
+
+.user .message-bubble { /* Target the bubble inside user group */
+    background-color: #007bff; /* Blue for user messages */
+    color: white;
+    align-self: flex-end; /* Align the bubble to the right */
+    border-bottom-right-radius: 4px; /* Slightly less round on one corner */
+}
+
+.user { /* Align the entire user message group to the right */
+    align-self: flex-end;
+}
+
+.bot .message-bubble { /* Target the bubble inside bot group */
+    background-color: #e2e8f0; /* Light grey for bot messages */
+    color: #333;
+    align-self: flex-start; /* Align the bubble to the left */
+    border-bottom-left-radius: 4px; /* Slightly less round on one corner */
+}
+
+.bot { /* Align the entire bot message group to the left */
+    align-self: flex-start;
 }
 
 .message-bubble {
-    max-width: 85%;
     padding: 12px 18px;
     border-radius: 18px; /* Rounded bubbles */
     line-height: 1.5;
     word-wrap: break-word; /* Ensures long words break */
     font-size: 0.95rem;
+    position: relative; /* Keep relative for positioning children if needed later */
 }
 
-.user-message {
-    background-color: #007bff; /* Blue for user messages */
-    color: white;
-    align-self: flex-end; /* Align to the right */
-    border-bottom-right-radius: 4px; /* Slightly less round on one corner */
+
+/* Token Counter Styling */
+.token-counter {
+    font-size: 0.75em; /* Small letters */
+    color: #6a737d; /* Muted grey color for readability */
+    margin-top: 2px; /* Small space below the bubble */
+    padding: 0 5px; /* Little padding to match bubble indents */
+    line-height: 1.2; /* Better line spacing for small text */
+    white-space: nowrap; /* Prevent breaking lines for "Prompt: X tokens" */
 }
 
-.bot-message {
-    background-color: #e2e8f0; /* Light grey for bot messages */
+.user .token-counter {
+    align-self: flex-end; /* Align user tokens to the right */
+    padding-right: 5px; /* Adjust padding */
+    color: rgba(255, 255, 255, 0.8); /* Adjusted color for user bubble */
+}
+
+.bot .token-counter {
+    align-self: flex-start; /* Align bot tokens to the left */
+    padding-left: 5px; /* Adjust padding */
+    color: #6a737d;
+}
+
+/* Parameters Display Styling - Made More Prominent & Not Bold */
+.params-display {
+    font-size: 0.85em; /* Make it a bit larger than token counter */
+    color: #333; /* Stronger color for higher visibility */
+    margin-top: 2px; /* Space below token counter */
+    padding: 2px 6px; /* A bit more padding */
+    line-height: 1.2;
+    white-space: nowrap;
+    font-weight: normal; /* IMPORTANT: Ensure it's NOT bold */
+    background-color: rgba(255, 255, 255, 0.7); /* Subtle background for emphasis */
+    border-radius: 4px;
+    display: inline-block; /* To make background/padding work better and keep inline flow */
+}
+
+.user .params-display {
+    align-self: flex-end;
+    text-align: right;
+    padding-right: 5px;
+    color: rgba(255, 255, 255, 0.9);
+    background-color: rgba(0, 0, 0, 0.4); /* Darker background for user bubble */
+}
+
+.bot .params-display {
+    align-self: flex-start;
+    text-align: left;
+    padding-left: 5px;
     color: #333;
-    align-self: flex-start; /* Align to the left */
-    border-bottom-left-radius: 4px; /* Slightly less round on one corner */
+    background-color: rgba(255, 255, 255, 0.7);
 }
+
+
+/* Markdown specific styling for bot messages */
+.bot-message h1, .bot-message h2, .bot-message h3, .bot-message h4, .bot-message h5, .bot-message h6 {
+    margin-top: 1em;
+    margin-bottom: 0.5em;
+    font-weight: bold;
+    color: #2c3e50;
+    line-height: 1.2;
+}
+
+.bot-message h1 { font-size: 1.5em; }
+.bot-message h2 { font-size: 1.3em; }
+.bot-message h3 { font-size: 1.1em; }
+.bot-message h4 { font-size: 1em; }
+.bot-message h5 { font-size: 0.9em; }
+.bot-message h6 { font-size: 0.8em; }
+
+
+.bot-message p {
+    margin-bottom: 1em;
+}
+
+.bot-message ul, .bot-message ol {
+    margin-left: 1.5em;
+    margin-bottom: 1em;
+    list-style-position: outside; /* Ensure bullets/numbers are outside content */
+}
+
+.bot-message ul {
+    list-style-type: disc;
+}
+
+.bot-message ol {
+    list-style-type: decimal;
+}
+
+.bot-message li {
+    margin-bottom: 0.5em;
+}
+
+.bot-message strong {
+    font-weight: bold;
+}
+
+.bot-message em {
+    font-style: italic;
+}
+
+.bot-message code {
+    font-family: monospace;
+    background-color: rgba(27,31,35,0.05);
+    border-radius: 3px;
+    padding: 0.2em 0.4em;
+    font-size: 0.85em;
+}
+
+.bot-message pre {
+    background-color: #2d2d2d;
+    color: #f8f8f2;
+    padding: 1em;
+    border-radius: 8px;
+    overflow-x: auto; /* Enable horizontal scrolling for code blocks */
+    font-family: monospace;
+    font-size: 0.85em;
+    margin-top: 1em;
+    margin-bottom: 1em;
+}
+
 
 /* Input Area */
 .chat-input-area {
@@ -115,89 +253,6 @@ body {
 .send-button:active {
     transform: translateY(0);
     box-shadow: 0 2px 5px rgba(40, 167, 69, 0.15);
-}
-
-.send-button:disabled {
-    background: #cccccc;
-    cursor: not-allowed;
-    box-shadow: none;
-    transform: none;
-}
-
-/* Modal for API Key/Token Input */
-.setup-modal {
-    display: flex; /* Use flex to center the modal */
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.6);
-    justify-content: center;
-    align-items: center;
-    z-index: 1000;
-}
-
-.setup-modal-content {
-    background-color: #ffffff;
-    padding: 30px;
-    border-radius: 16px;
-    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
-    width: 90%;
-    max-width: 450px;
-    text-align: center;
-    transform: translateY(-20px); /* Slight initial lift */
-    animation: fadeIn 0.3s ease-out forwards;
-}
-
-.setup-modal-content h2 {
-    color: #333;
-    margin-bottom: 20px;
-    font-size: 1.6rem;
-}
-
-.setup-modal-content label {
-    display: block;
-    text-align: left;
-    margin-bottom: 8px;
-    font-weight: 600;
-    color: #555;
-}
-
-.setup-modal-content input {
-    width: calc(100% - 24px); /* Account for padding */
-    padding: 12px;
-    border: 1px solid #e0e6ed;
-    border-radius: 8px;
-    margin-bottom: 15px;
-    font-size: 1rem;
-}
-
-.setup-modal-content input:focus {
-    border-color: #667eea;
-    outline: none;
-}
-
-.setup-modal-button {
-    background: linear-gradient(90deg, #667eea, #764ba2);
-    color: white;
-    border: none;
-    border-radius: 10px;
-    padding: 12px 25px;
-    font-size: 1rem;
-    cursor: pointer;
-    transition: transform 0.2s, box-shadow 0.2s;
-    box-shadow: 0 4px 10px rgba(102, 126, 234, 0.25);
-}
-
-.setup-modal-button:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 15px rgba(102, 126, 234, 0.35);
-}
-
-.setup-modal-button:active {
-    transform: translateY(0);
-    box-shadow: 0 2px 5px rgba(102, 126, 234, 0.15);
 }
 
 /* Loading spinner */

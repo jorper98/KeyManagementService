@@ -3,17 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>API Key Demo App2 - Secure Chatbot</title>
+    <title>API Key Demo SampleApp2 - Chatbot</title>
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Include Marked.js for Markdown parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.0/marked.min.js"></script>
 </head>
 <body>
     <div class="chat-container">
         <div class="chat-header">
-            API Key Demo App2 - Secure Chatbot 🤖
+            API Key Demo SampleApp2 - Chatbot
         </div>
         <div class="chat-messages" id="chatMessages">
-            <div class="message-bubble bot-message">Hello! I am a secure chatbot. I get my generative AI API key from your Keystore service via my backend. Ask me anything!</div>
+            <div class="message-group bot">
+                <div class="message-bubble bot-message">Hello! I am chatbot. Ask me anything!</div>
+            </div>
         </div>
         <div class="chat-input-area">
             <input type="text" id="userInput" class="chat-input" placeholder="Type your message...">
@@ -23,26 +27,57 @@
 
     <script>
         // DOM Elements
-        const chatMessagesDiv = document.getElementById('chatMessages');
-        const userInput = document.getElementById('userInput');
-        const sendButton = document.getElementById('sendButton');
+        let chatMessagesDiv; // Assigned in DOMContentLoaded
+        let userInput;       // Assigned in DOMContentLoaded
+        let sendButton;      // Assigned in DOMContentLoaded
 
-        // Event Listeners
-        sendButton.addEventListener('click', sendMessage);
-        userInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                sendMessage();
-            }
-        });
+        // Helper function to estimate token count (simple word count approximation)
+        function estimateTokens(text) {
+            if (!text) return 0;
+            return text.split(/\s+/).filter(word => word.length > 0).length;
+        }
 
         // Function to display messages in the chat UI
-        function appendMessage(sender, text) {
+        function appendMessage(sender, text, tokenInfo = null, paramsInfo = null) {
+            const messageGroup = document.createElement('div');
+            messageGroup.classList.add('message-group');
+            messageGroup.classList.add(sender);
+
             const messageBubble = document.createElement('div');
             messageBubble.classList.add('message-bubble');
-            messageBubble.classList.add(sender === 'user' ? 'user-message' : 'bot-message');
-            messageBubble.textContent = text;
-            chatMessagesDiv.appendChild(messageBubble);
-            chatMessagesDiv.scrollTop = chatMessagesDiv.scrollHeight; // Auto-scroll to bottom
+            messageBubble.classList.add(`${sender}-message`);
+            
+            if (sender === 'bot') {
+                messageBubble.innerHTML = marked.parse(text); 
+            } else {
+                messageBubble.textContent = text;
+            }
+            
+            messageGroup.appendChild(messageBubble);
+
+            // Add token information as a separate div below the bubble
+            if (tokenInfo) {
+                const tokenCounter = document.createElement('div');
+                tokenCounter.classList.add('token-counter');
+                tokenCounter.innerHTML = `
+                    Prompt: ${tokenInfo.promptTokens} tokens, 
+                    Response: ${tokenInfo.responseTokens} tokens, 
+                    Total: ${tokenInfo.totalTokens} tokens
+                `;
+                messageGroup.appendChild(tokenCounter);
+            }
+
+            // NEW: Add parameters information if provided (for bot responses)
+            if (paramsInfo && sender === 'bot') {
+                const paramsDisplay = document.createElement('div');
+                paramsDisplay.classList.add('params-display');
+                paramsDisplay.textContent = `(Temp: ${paramsInfo.temperature}, Max: ${paramsInfo.maxOutputTokens})`; // Corrected format and textContent
+                messageGroup.appendChild(paramsDisplay);
+            }
+
+
+            chatMessagesDiv.appendChild(messageGroup);
+            chatMessagesDiv.scrollTop = chatMessagesDiv.scrollHeight;
         }
 
         // Function to show/hide loading indicator
@@ -64,16 +99,17 @@
             const userText = userInput.value.trim();
             if (userText === '') return;
 
-            appendMessage('user', userText);
+            const promptTokens = estimateTokens(userText);
+
+            appendMessage('user', userText); // Display user message
             userInput.value = '';
             showLoading(true);
 
             try {
-                // Call sampleApp2's backend chat endpoint
-                const response = await fetch('/chat', { // Calls its own backend
+                const response = await fetch('/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prompt: userText })
+                    body: JSON.stringify({ prompt: userText }) 
                 });
 
                 if (!response.ok) {
@@ -82,7 +118,22 @@
                 }
 
                 const data = await response.json();
-                appendMessage('bot', data.response);
+                const botResponseText = data.response;
+                const responseTokens = estimateTokens(botResponseText);
+                const totalTokens = promptTokens + responseTokens;
+
+                // Pass actual temperature and maxOutputTokens received from backend response
+                const paramsUsed = {
+                    temperature: data.temperature, 
+                    maxOutputTokens: data.maxOutputTokens
+                };
+
+                appendMessage(
+                    'bot', 
+                    botResponseText, 
+                    { promptTokens, responseTokens, totalTokens },
+                    paramsUsed // Pass parameters received from backend for display
+                );
 
             } catch (error) {
                 appendMessage('bot', `Error: ${error.message}`);
@@ -92,11 +143,11 @@
             }
         }
 
-        // Helper for copying to clipboard (not directly used in this chatbot, but kept for consistency)
+        // Helper for copying to clipboard
         function copyToClipboard(text) {
             const textarea = document.createElement('textarea');
             textarea.value = text;
-            textarea.style.position = 'fixed'; // Avoid scrolling to bottom
+            textarea.style.position = 'fixed';
             textarea.style.opacity = 0;
             document.body.appendChild(textarea);
             textarea.focus();
@@ -108,6 +159,27 @@
             }
             document.body.removeChild(textarea);
         }
+
+        // --- DOMContentLoaded for initial setup ---
+        document.addEventListener('DOMContentLoaded', () => {
+            // Assign DOM elements here to ensure they are loaded
+            chatMessagesDiv = document.getElementById('chatMessages');
+            userInput = document.getElementById('userInput');
+            sendButton = document.getElementById('sendButton');
+
+            // Attach event listeners after DOM elements are assigned
+            sendButton.addEventListener('click', sendMessage);
+            userInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+
+            // Initial state: enable inputs and buttons immediately.
+            userInput.disabled = false;
+            sendButton.disabled = false;
+            userInput.focus();
+        });
     </script>
 </body>
 </html>

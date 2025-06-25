@@ -13,6 +13,8 @@ services:
       - KEYSTORE_JWT_TOKEN=${KEYSTORE_JWT_TOKEN} # JWT for this app to access Keystore
       - GENERATIVE_AI_KEY_NAME=${GENERATIVE_AI_KEY_NAME} # Name of the key in Keystore
       - GENERATIVE_AI_MODEL=${GENERATIVE_AI_MODEL:-gemini-2.0-flash} # Default LLM model, can be overridden
+    env_file:
+      - ./.env
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5001/"] # Check if index.html is served
