@@ -1,4 +1,5 @@
 /* General Body and Container Styles */
+/* v0.7.0 */
 body {
     font-family: 'Inter', sans-serif; /* Using Inter font */
     background: linear-gradient(135deg, #f0f4f8 0%, #d9e2ec 100%); /* Light gradient background */
