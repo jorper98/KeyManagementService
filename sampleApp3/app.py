@@ -1,4 +1,4 @@
-# app.py v0.7.0
+# app.py v0.7.1
 #
 import os
 import json
@@ -153,12 +153,33 @@ def get_llm_defaults():
         'default_max_output_tokens': DEFAULT_LLM_MAX_OUTPUT_TOKENS
     })
 
+# Simple word count based token estimator (approximation)
+def estimate_tokens_simple(text):
+    if not text:
+        return 0
+    return len(text.split())
+
+# Max context window sizes (approximate, adjust based on actual model limits)
+# These are crucial for managing conversation history
+MAX_CONTEXT_TOKENS = {
+    "gemini-1.5-flash-latest": 1000000, # Large context, but manage for practical use
+    "gemini-1.5-pro-latest": 1000000,
+    "gpt-3.5-turbo": 16385, # Actual context depends on version
+    "gpt-4o-mini": 128000,
+    "mistralai/mistral-7b-instruct": 8192, # Common for Mistral-7B
+    "deepseek-ai/deepseek-coder": 16384, # Common for DeepSeek Coder
+    # Add other models and their context windows here
+}
+DEFAULT_MAX_CONTEXT_WINDOW = 4000 # A reasonable default if model not found in map
+
+
 @app.route('/chat', methods=['POST'])
 def chat():
     logger.debug(f"Received chat request from frontend: {request.json}") 
     data = request.get_json()
     user_prompt = data.get('prompt')
     selected_llm_id = data.get('selectedLlmId')
+    chat_history_from_frontend = data.get('history', []) 
 
     if not user_prompt:
         logger.warning("No prompt provided in request.")
@@ -182,8 +203,6 @@ def chat():
     current_generative_ai_key_name = selected_llm_config['key_name']
     current_generative_ai_type = selected_llm_config['type'] 
 
-    # NEW: Accept and validate temperature and maxOutputTokens from frontend
-    # Use defaults if not provided or invalid
     temperature_param = DEFAULT_LLM_TEMPERATURE
     max_output_tokens_param = DEFAULT_LLM_MAX_OUTPUT_TOKENS
 
@@ -218,14 +237,53 @@ def chat():
         llm_url = ""
         llm_headers = {'Content-Type': 'application/json'} 
 
-        # Initialize final_temperature_for_api BEFORE the conditional blocks
-        # This ensures it's always defined, regardless of the LLM type.
         final_temperature_for_api = temperature_param 
+
+        # --- CONTEXT MANAGEMENT ---
+        # Get the max context window for the current model, use a default if not found
+        model_context_window = MAX_CONTEXT_TOKENS.get(current_generative_ai_model, DEFAULT_MAX_CONTEXT_WINDOW)
+        
+        # Estimate prompt tokens for the current user input
+        current_prompt_tokens = estimate_tokens_simple(user_prompt)
+
+        llm_chat_history = []
+        context_tokens_sum = 0
+        
+        # Iterate history in reverse to prioritize recent messages
+        for msg in reversed(chat_history_from_frontend):
+            msg_content = msg.get('content', '')
+            msg_role = msg.get('role')
+            if msg_content and msg_role:
+                msg_tokens = estimate_tokens_simple(msg_content)
+                # Keep messages as long as total context + current prompt + expected response tokens are within limit
+                # We subtract max_output_tokens_param because that's what we expect the model to generate
+                # and current_prompt_tokens because that's the current turn's input
+                if (context_tokens_sum + msg_tokens + current_prompt_tokens + max_output_tokens_param) < model_context_window:
+                    # Prepend to build history in chronological order for the API call
+                    llm_chat_history.insert(0, {'role': msg_role, 'content': msg_content})
+                    context_tokens_sum += msg_tokens
+                else:
+                    logger.warning(f"Truncated chat history for model '{current_generative_ai_model}'. Context window limit reached. Dropping older message: {msg_content[:50]}...")
+                    break # Stop adding older messages
+
+        # Add the current user prompt to the history sent to the LLM
+        # This is added after truncation logic, as it's always part of the current turn
+        llm_chat_history.append({"role": "user", "content": user_prompt})
+
 
         # Determine the correct API call structure based on the GENERATIVE_AI_TYPE
         if current_generative_ai_type == "gemini":
+            # Gemini expects 'parts' within a 'content' object for each turn.
+            # Convert simple history format to Gemini's format.
+            formatted_gemini_history = []
+            for entry in llm_chat_history:
+                formatted_gemini_history.append({
+                    "role": "user" if entry['role'] == "user" else "model", # Gemini uses 'model' for assistant
+                    "parts": [{"text": entry['content']}]
+                })
+
             llm_payload = {
-                "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
+                "contents": formatted_gemini_history,
                 "generationConfig": {
                     "temperature": temperature_param, # For Gemini, use the original temperature_param
                     "maxOutputTokens": max_output_tokens_param,
@@ -233,7 +291,10 @@ def chat():
             }
             llm_url = f"https://generativelanguage.googleapis.com/v1beta/models/{current_generative_ai_model}:generateContent?key={generative_ai_api_key}"
             
-        elif current_generative_ai_type == "openai":
+        elif current_generative_ai_type == "openai" or current_generative_ai_type == "openrouter":
+            # OpenAI and OpenRouter expect 'messages' array with 'role' and 'content'
+            # The history is already in a compatible format.
+            
             # Determine correct max tokens parameter name for specific OpenAI models
             max_tokens_param_name = "max_tokens" 
             if current_generative_ai_model.lower() == "o4-mini-2025-04-16" or \
@@ -241,45 +302,34 @@ def chat():
                 max_tokens_param_name = "max_completion_tokens"
 
             # Check for specific OpenAI models that only support default temperature (1.0)
-            if current_generative_ai_model.lower() == "o4-mini-2025-04-16": 
+            if current_generative_ai_type == "openai" and current_generative_ai_model.lower() == "o4-mini-2025-04-16": 
                 if temperature_param != 1.0:
                     logger.warning(f"Model {current_generative_ai_model} only supports temperature 1.0. Overriding user input {temperature_param} to 1.0 for API call.")
-                    final_temperature_for_api = 1.0 # This is where it's potentially modified for OpenAI
+                    final_temperature_for_api = 1.0 
             
             llm_payload = {
                 "model": current_generative_ai_model,
-                "messages": [{"role": "user", "content": user_prompt}],
+                "messages": llm_chat_history, # Use the prepared history
                 "temperature": final_temperature_for_api, # Use the final_temperature_for_api
                 max_tokens_param_name: max_output_tokens_param, 
             }
             llm_url = "https://api.openai.com/v1/chat/completions"
-            llm_headers['Authorization'] = f'Bearer {generative_ai_api_key}'
+            if current_generative_ai_type == "openrouter":
+                llm_url = "https://openrouter.ai/api/v1/chat/completions" # OpenRouter specific endpoint
+                # Optional: Add OpenRouter specific headers if needed for tracking/analytics
+                # llm_headers['HTTP-Referer'] = "http://localhost:5001" # Replace with your app's actual URL
+                # llm_headers['X-Title'] = "SampleApp3-Chatbot"
 
-        elif current_generative_ai_type == "openrouter":
-            # OpenRouter API is compatible with OpenAI's chat completions but uses a different base URL
-            # And often has custom headers for routing if needed, but standard auth is usually enough.
-            llm_payload = {
-                "model": current_generative_ai_model,
-                "messages": [{"role": "user", "content": user_prompt}],
-                "temperature": final_temperature_for_api, # OpenRouter models generally support temperature
-                "max_tokens": max_output_tokens_param, # OpenRouter models typically use max_tokens
-            }
-            llm_url = "https://openrouter.ai/api/v1/chat/completions"
             llm_headers['Authorization'] = f'Bearer {generative_ai_api_key}'
-            # OpenRouter sometimes benefits from a "HTTP-Referer" header for analytics or specific API key types
-            # You might add: llm_headers['HTTP-Referer'] = "YOUR_APP_URL" (e.g., "http://localhost:5001" or your domain)
-            # And: llm_headers['X-Title'] = "Your Chatbot Name"
 
         else:
             logger.error(f"Unsupported LLM type specified in environment variable: '{current_generative_ai_type}'. Key='{current_generative_ai_key_name}', Model='{current_generative_ai_model}'")
             return jsonify({'error': 'Unsupported LLM type configured on the backend.'}), 500
 
-        # Create a scrubbed URL for logging/error reporting (only for API key in URL, like Gemini)
         scrubbed_llm_url = llm_url
         if "key=" in scrubbed_llm_url:
             scrubbed_llm_url = scrubbed_llm_url.split("key=")[0] + "key=****"
 
-        # This logging line now safely uses final_temperature_for_api because it's always defined
         logger.info(f"Calling LLM API for model '{current_generative_ai_model}' (Type: {current_generative_ai_type}) to {scrubbed_llm_url} with T={final_temperature_for_api}, Max={max_output_tokens_param}")
         llm_response = requests.post(llm_url, headers=llm_headers, json=llm_payload, timeout=20)
         llm_response.raise_for_status()
@@ -287,26 +337,57 @@ def chat():
         llm_result = llm_response.json()
 
         bot_response_text = "Could not parse LLM response."
+        response_tokens = 0 
+        prompt_tokens_api_response = 0 # Initialize prompt tokens from API usage
 
-        # Parse response based on the determined LLM type
+        # Parse response based on the determined LLM type and extract tokens
         if current_generative_ai_type == "openai" or current_generative_ai_type == "openrouter":
-            # OpenAI and OpenRouter usually have a similar response structure for chat completions
             if llm_result.get('choices') and llm_result['choices'][0].get('message') and llm_result['choices'][0]['message'].get('content'):
                 bot_response_text = llm_result['choices'][0]['message']['content']
+            
+            # Extract tokens from usage object (OpenAI/OpenRouter standard)
+            if llm_result.get('usage'):
+                response_tokens = llm_result['usage'].get('completion_tokens', 0)
+                # Some OpenRouter models might use 'output_tokens' or similar if completion_tokens is zero
+                if response_tokens == 0: 
+                     response_tokens = llm_result['usage'].get('output_tokens', 0)
+                prompt_tokens_api_response = llm_result['usage'].get('prompt_tokens', 0)
+
         elif current_generative_ai_type == "gemini":
             if llm_result.get('candidates') and llm_result['candidates'][0].get('content') and llm_result['candidates'][0]['content'].get('parts'):
                 bot_response_text = llm_result['candidates'][0]['content']['parts'][0]['text']
+            
+            # Extract tokens from usageMetadata (Gemini standard)
+            if llm_result.get('usageMetadata'):
+                prompt_tokens_api_response = llm_result['usageMetadata'].get('prompt_token_count', 0)
+                # Gemini's candidates_token_count is the generated output length
+                response_tokens = llm_result['usageMetadata'].get('candidates_token_count', 0)
+            
+            # Fallback to simple estimate if API didn't provide specific counts or structure changed
+            if response_tokens == 0 and bot_response_text:
+                response_tokens = estimate_tokens_simple(bot_response_text)
+            if prompt_tokens_api_response == 0 and user_prompt: # estimate if prompt tokens not available from API
+                prompt_tokens_api_response = estimate_tokens_simple(user_prompt)
+
         else:
-            logger.warning(f"Unexpected LLM response structure for model type {current_generative_ai_type}: {llm_result}")
+            logger.warning(f"Unexpected LLM response structure or missing token info for model type {current_generative_ai_type}: {llm_result}")
             return jsonify({'error': 'Could not parse LLM response due to unexpected model type.'}), 500
         
+        # Calculate total tokens (using API-provided prompt tokens if available, else estimated current_prompt_tokens)
+        # Note: context_tokens_sum is based on simple estimate on backend
+        total_tokens_used = context_tokens_sum + prompt_tokens_api_response + response_tokens
+
         if bot_response_text != "Could not parse LLM response." and bot_response_text != "Could not parse LLM response due to unexpected model type.":
             logger.info("Successfully received response from LLM.")
             return jsonify({
                 'response': bot_response_text,
-                'temperature': temperature_param, # Note: This sends the *original* requested temperature back to frontend, not the adjusted one
+                'temperature': temperature_param, # Send original requested temperature to frontend
                 'maxOutputTokens': max_output_tokens_param, 
-                'modelUsed': current_generative_ai_model
+                'modelUsed': current_generative_ai_model,
+                'promptTokens': prompt_tokens_api_response, # Send API's reported prompt tokens
+                'contextTokens': context_tokens_sum,         # Send backend's calculated context tokens
+                'responseTokens': response_tokens,           # Send API's reported response tokens
+                'totalTokens': total_tokens_used             # Send calculated total tokens
             })
         else:
             logger.warning(f"Unexpected LLM response structure for model {current_generative_ai_model}: {llm_result}")

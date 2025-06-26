@@ -11,7 +11,7 @@
 <body>
     <div class="chat-container">
         <div class="chat-header">
-            API Key Demo SampleApp3 - Chatbot v0.7.0
+            API Key Demo SampleApp3 - Chatbot v0.7.1
         </div>
         <div class="chat-messages" id="chatMessages">
             <div class="message-group bot">
@@ -30,11 +30,11 @@
             <div class="llm-params-group">
                 <div class="form-group-inline">
                     <label for="temperatureInput">Temp:</label>
-                    <input type="number" id="temperatureInput" value="0.7" min="0.0" max="1.0" step="0.1" class="small-param-input">
+                    <input type="number" id="temperatureInput" min="0.0" max="1.0" step="0.1" class="small-param-input">
                 </div>
                 <div class="form-group-inline">
                     <label for="maxOutputTokensInput">Max:</label>
-                    <input type="number" id="maxOutputTokensInput" value="200" min="1" step="1" class="small-param-input">
+                    <input type="number" id="maxOutputTokensInput" min="1" step="1" class="small-param-input">
                 </div>
             </div>
             
@@ -51,6 +51,10 @@
         let maxOutputTokensInput;
         let llmSelect;
 
+        // Global chat history for context
+        // Each entry will be {role: 'user'/'assistant', content: 'message text'}
+        let chatHistory = []; 
+
         // Helper function to estimate token count (simple word count approximation)
         function estimateTokens(text) {
             if (!text) return 0;
@@ -58,6 +62,7 @@
         }
 
         // Function to display messages in the chat UI
+        // Updated to accept tokenInfo and paramsInfo
         function appendMessage(sender, text, tokenInfo = null, paramsInfo = null, modelInfo = null) {
             const messageGroup = document.createElement('div');
             messageGroup.classList.add('message-group');
@@ -79,10 +84,12 @@
             if (tokenInfo) {
                 const tokenCounter = document.createElement('div');
                 tokenCounter.classList.add('token-counter');
+                // Display context tokens separately for clarity
                 tokenCounter.innerHTML = `
-                    Prompt: ${tokenInfo.promptTokens} tokens, 
-                    Response: ${tokenInfo.responseTokens} tokens, 
-                    Total: ${tokenInfo.totalTokens} tokens
+                    Context: ${tokenInfo.contextTokens || 0} tokens,
+                    Prompt: ${tokenInfo.promptTokens || 0} tokens, 
+                    Response: ${tokenInfo.responseTokens || 0} tokens, 
+                    Total: ${tokenInfo.totalTokens || 0} tokens
                 `;
                 messageGroup.appendChild(tokenCounter);
             }
@@ -131,13 +138,13 @@
         // Function to fetch LLM options AND default parameters
         async function loadLlmOptionsAndDefaults() {
             try {
-                const response = await fetch('/llm-options'); // This endpoint provides LLM options and default model
-                if (!response.ok) {
-                    throw new Error(`Failed to load LLM options: ${response.statusText}`);
+                const optionsResponse = await fetch('/llm-options'); 
+                if (!optionsResponse.ok) {
+                    throw new Error(`Failed to load LLM options: ${optionsResponse.statusText}`);
                 }
-                const data = await response.json();
-                const options = data.options;
-                const defaultModel = data.default_model;
+                const optionsData = await optionsResponse.json();
+                const options = optionsData.options;
+                const defaultModel = optionsData.default_model;
 
                 llmSelect.innerHTML = ''; // Clear existing options
 
@@ -165,7 +172,7 @@
                     appendMessage('bot', 'Error: No LLM models configured on the backend.');
                 }
 
-                // NEW: Fetch default temperature and max_output_tokens from a new backend endpoint
+                // Fetch default temperature and max_output_tokens from a new backend endpoint
                 const paramsResponse = await fetch('/llm-defaults');
                 if (!paramsResponse.ok) {
                     throw new Error(`Failed to load LLM default parameters: ${paramsResponse.statusText}`);
@@ -190,9 +197,12 @@
             const userText = userInput.value.trim();
             if (userText === '') return;
 
-            const promptTokens = estimateTokens(userText);
+            // Before sending, add user message to history
+            chatHistory.push({role: 'user', content: userText});
 
-            appendMessage('user', userText); // Display user message
+            // Display user message in UI (token info will be added after response)
+            // For user message, we can show prompt tokens, but context/response tokens are from backend
+            appendMessage('user', userText, {promptTokens: estimateTokens(userText)}); 
             userInput.value = '';
             showLoading(true);
 
@@ -206,16 +216,22 @@
                 if (isNaN(temperature) || temperature < 0 || temperature > 1) {
                     appendMessage('bot', 'Error: Temperature must be between 0.0 and 1.0.');
                     showLoading(false);
+                    // Remove last user message from history if it failed
+                    chatHistory.pop(); 
                     return;
                 }
                 if (isNaN(maxOutputTokens) || maxOutputTokens < 1) {
                     appendMessage('bot', 'Error: Max Output Tokens must be a positive integer.');
                     showLoading(false);
+                    // Remove last user message from history if it failed
+                    chatHistory.pop(); 
                     return;
                 }
                 if (!selectedLlmId) {
                      appendMessage('bot', 'Error: No LLM selected or available.');
                      showLoading(false);
+                     // Remove last user message from history if it failed
+                     chatHistory.pop(); 
                      return;
                 }
 
@@ -226,7 +242,8 @@
                         prompt: userText,
                         temperature: temperature,        
                         maxOutputTokens: maxOutputTokens,
-                        selectedLlmId: selectedLlmId     
+                        selectedLlmId: selectedLlmId,
+                        history: chatHistory // Send the full history here!
                     })
                 });
 
@@ -237,8 +254,17 @@
 
                 const data = await response.json();
                 const botResponseText = data.response;
-                const responseTokens = estimateTokens(botResponseText);
-                const totalTokens = promptTokens + responseTokens;
+                
+                // Add bot response to history
+                chatHistory.push({role: 'assistant', content: botResponseText});
+
+                // Get token info from backend response
+                const tokenInfo = {
+                    promptTokens: data.promptTokens,
+                    responseTokens: data.responseTokens,
+                    contextTokens: data.contextTokens, // NEW: Context tokens
+                    totalTokens: data.totalTokens
+                };
 
                 // Pass actual temperature and maxOutputTokens received from backend response
                 const paramsUsed = {
@@ -248,10 +274,15 @@
 
                 const modelUsed = data.modelUsed;
 
+                // Re-render the last user message with full token info, then append bot message
+                // This approach requires clearing and re-appending the last user message
+                // A simpler approach for this demo: Append bot message with all info,
+                // and for the user message, only show prompt tokens initially, or retrieve context for it.
+                // For now, we'll just append bot message with all info from backend.
                 appendMessage(
                     'bot', 
                     botResponseText, 
-                    { promptTokens, responseTokens, totalTokens },
+                    tokenInfo, // Pass token info to be displayed
                     paramsUsed,
                     modelUsed
                 );
@@ -259,12 +290,14 @@
             } catch (error) {
                 appendMessage('bot', `Error: ${error.message}`);
                 console.error('Frontend chat call failed:', error);
+                // Remove last user message from history if it failed
+                chatHistory.pop(); 
             } finally {
                 showLoading(false);
             }
         }
 
-        // Helper for copying to clipboard
+        // Helper for copying to clipboard (kept for completeness)
         function copyToClipboard(text) {
             const textarea = document.createElement('textarea');
             textarea.value = text;
