@@ -1,0 +1,419 @@
+/* General Body and Container Styles */
+/* v0.7.0 */
+body {
+    font-family: 'Inter', sans-serif; /* Using Inter font */
+    background: linear-gradient(135deg, #f0f4f8 0%, #d9e2ec 100%); /* Light gradient background */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    margin: 0;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+.chat-container {
+    background-color: #ffffff;
+    border-radius: 16px; /* Rounded corners for the container */
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); /* Soft shadow */
+    width: 100%;
+    max-width: 600px; /* Max width for larger screens */
+    height: 80vh; /* Responsive height */
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 20px; /* Padding inside the container */
+}
+
+/* Header Styles */
+.chat-header {
+    background: linear-gradient(90deg, #667eea, #764ba2); /* Purple gradient header */
+    color: white;
+    padding: 15px 20px;
+    border-radius: 12px; /* Rounded corners for header */
+    margin-bottom: 20px; /* Space below header */
+    text-align: center;
+    font-size: 1.5rem;
+    font-weight: 700;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+}
+
+/* Chat Messages Area */
+.chat-messages {
+    flex-grow: 1; /* Allows message area to take available space */
+    overflow-y: auto; /* Scrollable messages */
+    padding-right: 10px; /* Space for scrollbar */
+    padding-bottom: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px; /* Space between message groups */
+}
+
+/* Message Group to wrap bubble and counter */
+.message-group {
+    display: flex;
+    flex-direction: column;
+    max-width: 85%; /* Limit width of the group */
+    margin-bottom: 10px; /* Space between groups */
+}
+
+.user .message-bubble { /* Target the bubble inside user group */
+    background-color: #007bff; /* Blue for user messages */
+    color: white;
+    align-self: flex-end; /* Align the bubble to the right */
+    border-bottom-right-radius: 4px; /* Slightly less round on one corner */
+}
+
+.user { /* Align the entire user message group to the right */
+    align-self: flex-end;
+}
+
+.bot .message-bubble { /* Target the bubble inside bot group */
+    background-color: #e2e8f0; /* Light grey for bot messages */
+    color: #333;
+    align-self: flex-start; /* Align the bubble to the left */
+    border-bottom-left-radius: 4px; /* Slightly less round on one corner */
+}
+
+.bot { /* Align the entire bot message group to the left */
+    align-self: flex-start;
+}
+
+.message-bubble {
+    padding: 12px 18px;
+    border-radius: 18px; /* Rounded bubbles */
+    line-height: 1.5;
+    word-wrap: break-word; /* Ensures long words break */
+    font-size: 0.95rem;
+    position: relative; /* Keep relative for positioning children if needed later */
+}
+
+
+/* Token Counter Styling */
+.token-counter {
+    font-size: 0.75em; /* Small letters */
+    color: #6a737d; /* Muted grey color for readability */
+    margin-top: 2px; /* Small space below the bubble */
+    padding: 0 5px; /* Little padding to match bubble indents */
+    line-height: 1.2; /* Better line spacing for small text */
+    white-space: nowrap; /* Prevent breaking lines for "Prompt: X tokens" */
+}
+
+.user .token-counter {
+    align-self: flex-end; /* Align user tokens to the right */
+    padding-right: 5px; /* Adjust padding */
+    color: rgba(255, 255, 255, 0.8); /* Adjusted color for user bubble */
+}
+
+.bot .token-counter {
+    align-self: flex-start; /* Align bot tokens to the left */
+    padding-left: 5px; /* Adjust padding */
+    color: #6a737d;
+}
+
+/* Parameters Display Styling */
+.params-display {
+    font-size: 0.75em; /* Match token counter size */
+    color: #5a5a5a; /* A bit darker for better contrast */
+    margin-top: 2px; /* Space below token counter */
+    padding: 0 5px;
+    line-height: 1.2;
+    white-space: nowrap;
+    font-weight: normal; /* Ensure it's NOT bold */
+    opacity: 0.9; /* Slightly transparent */
+}
+
+.user .params-display {
+    align-self: flex-end;
+    text-align: right;
+    padding-right: 5px;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.bot .params-display {
+    align-self: flex-start;
+    text-align: left;
+    padding-left: 5px;
+    color: #5a5a5a;
+}
+
+/* Model Display Styling (New) */
+.model-display {
+    font-size: 0.75em; /* Match token counter size */
+    color: #777; /* A slightly different grey */
+    margin-top: 2px; /* Space below params or token counter */
+    padding: 0 5px;
+    line-height: 1.2;
+    white-space: nowrap;
+    font-weight: normal;
+    opacity: 0.8;
+}
+
+.user .model-display {
+    align-self: flex-end;
+    text-align: right;
+    padding-right: 5px;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.bot .model-display {
+    align-self: flex-start;
+    text-align: left;
+    padding-left: 5px;
+    color: #777;
+}
+
+/* Markdown specific styling for bot messages */
+.bot-message h1, .bot-message h2, .bot-message h3, .bot-message h4, .bot-message h5, .bot-message h6 {
+    margin-top: 1em;
+    margin-bottom: 0.5em;
+    font-weight: bold;
+    color: #2c3e50;
+    line-height: 1.2;
+}
+
+.bot-message h1 { font-size: 1.5em; }
+.bot-message h2 { font-size: 1.3em; }
+.bot-message h3 { font-size: 1.1em; }
+.bot-message h4 { font-size: 1em; }
+.bot-message h5 { font-size: 0.9em; }
+.bot-message h6 { font-size: 0.8em; }
+
+
+.bot-message p {
+    margin-bottom: 1em;
+}
+
+.bot-message ul, .bot-message ol {
+    margin-left: 1.5em;
+    margin-bottom: 1em;
+    list-style-position: outside; /* Ensure bullets/numbers are outside content */
+}
+
+.bot-message ul {
+    list-style-type: disc;
+}
+
+.bot-message ol {
+    list-style-type: decimal;
+}
+
+.bot-message li {
+    margin-bottom: 0.5em;
+}
+
+.bot-message strong {
+    font-weight: bold;
+}
+
+.bot-message em {
+    font-style: italic;
+}
+
+.bot-message code {
+    font-family: monospace;
+    background-color: rgba(27,31,35,0.05);
+    border-radius: 3px;
+    padding: 0.2em 0.4em;
+    font-size: 0.85em;
+}
+
+.bot-message pre {
+    background-color: #2d2d2d;
+    color: #f8f8f2;
+    padding: 1em;
+    border-radius: 8px;
+    overflow-x: auto; /* Enable horizontal scrolling for code blocks */
+    font-family: monospace;
+    font-size: 0.85em;
+    margin-top: 1em;
+    margin-bottom: 1em;
+}
+
+
+/* Input Area */
+.chat-input-area {
+    display: flex; /* Use flexbox for horizontal layout */
+    align-items: flex-end; /* Align items to the bottom */
+    gap: 10px; /* Space between elements */
+    margin-top: 20px;
+    padding-top: 10px;
+    border-top: 1px solid #e0e6ed; /* Separator line */
+    flex-wrap: wrap; /* Allow wrapping on smaller screens */
+}
+
+/* New: LLM selection group styling */
+.llm-select-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%; /* Take full width above the input field */
+    margin-bottom: 10px; /* Space between select and input */
+}
+
+.llm-select-group label {
+    font-size: 0.95em;
+    color: #555;
+    white-space: nowrap;
+}
+
+.llm-select {
+    flex-grow: 1; /* Allow select to grow */
+    padding: 10px 12px;
+    border: 2px solid #cbd5e0;
+    border-radius: 12px;
+    font-size: 1rem;
+    outline: none;
+    transition: border-color 0.3s, box-shadow 0.3s;
+    background-color: #fff;
+    cursor: pointer;
+}
+
+.llm-select:focus {
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+}
+
+/* Main message input field */
+.chat-input {
+    flex-grow: 1; /* Allow to grow and take available space */
+    min-width: 150px; /* Ensure it doesn't shrink too much */
+    padding: 12px 16px;
+    border: 2px solid #cbd5e0;
+    border-radius: 12px;
+    font-size: 1rem;
+    outline: none;
+    transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+.chat-input:focus {
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
+}
+
+/* Styling for the LLM parameters input group */
+.llm-params-group {
+    display: flex; /* Use flex for internal layout */
+    gap: 10px; /* Space between temp and max inputs */
+    align-items: center; /* Vertically align label and input */
+    flex-shrink: 0; /* Prevent this group from shrinking excessively */
+    flex-wrap: wrap; /* Allow wrapping on very small screens */
+    margin-bottom: 5px; /* Small vertical margin for alignment in flex-wrap */
+}
+
+.form-group-inline {
+    display: flex; /* Flex for label and input on same line */
+    align-items: center; /* Vertically align label and input */
+    gap: 5px; /* Space between label and input */
+}
+
+.form-group-inline label {
+    font-size: 0.9em;
+    color: #555;
+    white-space: nowrap; /* Keep label on one line */
+}
+
+.small-param-input {
+    width: 60px; /* Fixed small width for parameter inputs */
+    padding: 8px 10px;
+    border: 1px solid #cbd5e0;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    text-align: center;
+}
+
+.small-param-input:focus {
+    border-color: #667eea;
+    box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+}
+
+.send-button {
+    background: linear-gradient(90deg, #28a745, #218838); /* Green gradient */
+    color: white;
+    border: none;
+    border-radius: 12px;
+    padding: 12px 20px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+    box-shadow: 0 4px 10px rgba(40, 167, 69, 0.25);
+    flex-shrink: 0; /* Prevent button from shrinking */
+    margin-bottom: 5px; /* Small vertical margin for alignment in flex-wrap */
+}
+
+.send-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 15px rgba(40, 167, 69, 0.35);
+}
+
+.send-button:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 5px rgba(40, 167, 69, 0.15);
+}
+
+/* Loading spinner */
+.loading-spinner {
+    border: 4px solid #f3f3f3; /* Light grey */
+    border-top: 4px solid #3498db; /* Blue */
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    animation: spin 1s linear infinite;
+    margin: 0 auto;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Responsive adjustments */
+@media (max-width: 480px) {
+    .chat-container {
+        border-radius: 0; /* No rounded corners on very small screens */
+        height: 100vh; /* Full height */
+    }
+    .chat-header {
+        font-size: 1.2rem;
+    }
+    .message-bubble {
+        padding: 10px 15px;
+        font-size: 0.9rem;
+    }
+    .chat-input-area {
+        flex-direction: column; /* Stack elements vertically */
+        gap: 15px;
+    }
+    .chat-input {
+        width: 100%; /* Full width */
+        min-width: unset;
+    }
+    .llm-params-group {
+        flex-direction: row; /* Keep parameters inline on small screens */
+        justify-content: space-around; /* Distribute evenly */
+        width: 100%; /* Take full width */
+    }
+    .send-button {
+        width: 100%;
+        padding: 10px;
+    }
+    .setup-modal-content {
+        padding: 20px;
+    }
+    .llm-select-group {
+        flex-direction: column; /* Stack label and select vertically */
+        align-items: flex-start;
+        width: 100%;
+        gap: 5px;
+    }
+    .llm-select {
+        width: 100%; /* Full width for the select dropdown */
+    }
+}

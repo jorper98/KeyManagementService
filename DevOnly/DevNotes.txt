@@ -1,4 +1,5 @@
-
+docker compose down --rmi all
+docker compose up --build -d
 
 Complete list of files: 
 Okay, I've updated my internal context with all the attached files you just provided.

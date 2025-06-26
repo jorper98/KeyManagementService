@@ -1,0 +1,23 @@
+# version: '3.8'
+name: sampleapp3 # Add this line
+services:
+  sampleapp3:
+    build: . # Build context is current directory (sampleApp3/)
+    container_name: sampleapp3-chatbot
+    ports:
+      - "5001:5001" # Host_port:Container_port for sampleapp3 (using 5001 as per your example)
+    environment:
+      # These variables are CRITICAL for sampleApp3 to communicate with Keystore
+      # and the Generative AI API. They will be loaded from sampleApp3/.env
+      - KEYSTORE_API_URL=${KEYSTORE_API_URL} # e.g., http://host.docker.internal:5000 or your Keystore's public IP
+      - KEYSTORE_JWT_TOKEN=${KEYSTORE_JWT_TOKEN} # JWT for this app to access Keystore
+
+    env_file:
+      - ./.env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/"] # Check if index.html is served
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s

@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Key Demo SampleApp3 - Chatbot II</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.0/marked.min.js"></script>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">
+            API Key Demo SampleApp3 - Chatbot v0.7.0
+        </div>
+        <div class="chat-messages" id="chatMessages">
+            <div class="message-group bot">
+                <div class="message-bubble bot-message">Hello! I am chatbot. Ask me anything!</div>
+            </div>
+        </div>
+        <div class="chat-input-area">
+            <div class="llm-select-group">
+                <label for="llmSelect">Select LLM:</label>
+                <select id="llmSelect" class="llm-select">
+                    </select>
+            </div>
+
+            <input type="text" id="userInput" class="chat-input" placeholder="Type your message...">
+
+            <div class="llm-params-group">
+                <div class="form-group-inline">
+                    <label for="temperatureInput">Temp:</label>
+                    <input type="number" id="temperatureInput" value="0.7" min="0.0" max="1.0" step="0.1" class="small-param-input">
+                </div>
+                <div class="form-group-inline">
+                    <label for="maxOutputTokensInput">Max:</label>
+                    <input type="number" id="maxOutputTokensInput" value="200" min="1" step="1" class="small-param-input">
+                </div>
+            </div>
+            
+            <button id="sendButton" class="send-button">Send</button>
+        </div>
+    </div>
+
+    <script>
+        // DOM Elements
+        let chatMessagesDiv;
+        let userInput;
+        let sendButton;
+        let temperatureInput;
+        let maxOutputTokensInput;
+        let llmSelect;
+
+        // Helper function to estimate token count (simple word count approximation)
+        function estimateTokens(text) {
+            if (!text) return 0;
+            return text.split(/\s+/).filter(word => word.length > 0).length;
+        }
+
+        // Function to display messages in the chat UI
+        function appendMessage(sender, text, tokenInfo = null, paramsInfo = null, modelInfo = null) {
+            const messageGroup = document.createElement('div');
+            messageGroup.classList.add('message-group');
+            messageGroup.classList.add(sender);
+
+            const messageBubble = document.createElement('div');
+            messageBubble.classList.add('message-bubble');
+            messageBubble.classList.add(`${sender}-message`);
+            
+            if (sender === 'bot') {
+                messageBubble.innerHTML = marked.parse(text); 
+            } else {
+                messageBubble.textContent = text;
+            }
+            
+            messageGroup.appendChild(messageBubble);
+
+            // Add token information as a separate div below the bubble
+            if (tokenInfo) {
+                const tokenCounter = document.createElement('div');
+                tokenCounter.classList.add('token-counter');
+                tokenCounter.innerHTML = `
+                    Prompt: ${tokenInfo.promptTokens} tokens, 
+                    Response: ${tokenInfo.responseTokens} tokens, 
+                    Total: ${tokenInfo.totalTokens} tokens
+                `;
+                messageGroup.appendChild(tokenCounter);
+            }
+
+            // Add parameters information if provided (for bot responses)
+            if (paramsInfo && sender === 'bot') {
+                const paramsDisplay = document.createElement('div');
+                paramsDisplay.classList.add('params-display');
+                paramsDisplay.textContent = `(Temp: ${paramsInfo.temperature}, Max: ${paramsInfo.maxOutputTokens})`;
+                messageGroup.appendChild(paramsDisplay);
+            }
+
+            // Add model information if provided (for bot responses)
+            if (modelInfo && sender === 'bot') {
+                const modelDisplay = document.createElement('div');
+                modelDisplay.classList.add('model-display');
+                modelDisplay.textContent = `(Model: ${modelInfo})`;
+                messageGroup.appendChild(modelDisplay);
+            }
+
+
+            chatMessagesDiv.appendChild(messageGroup);
+            chatMessagesDiv.scrollTop = chatMessagesDiv.scrollHeight;
+        }
+
+        // Function to show/hide loading indicator
+        function showLoading(show) {
+            if (show) {
+                sendButton.innerHTML = '<div class="loading-spinner"></div>';
+                sendButton.disabled = true;
+                userInput.disabled = true;
+                temperatureInput.disabled = true; 
+                maxOutputTokensInput.disabled = true;
+                llmSelect.disabled = true; 
+            } else {
+                sendButton.innerHTML = 'Send';
+                sendButton.disabled = false;
+                userInput.disabled = false;
+                temperatureInput.disabled = false; 
+                maxOutputTokensInput.disabled = false;
+                llmSelect.disabled = false; 
+                userInput.focus();
+            }
+        }
+
+        // Function to fetch LLM options AND default parameters
+        async function loadLlmOptionsAndDefaults() {
+            try {
+                const response = await fetch('/llm-options'); // This endpoint provides LLM options and default model
+                if (!response.ok) {
+                    throw new Error(`Failed to load LLM options: ${response.statusText}`);
+                }
+                const data = await response.json();
+                const options = data.options;
+                const defaultModel = data.default_model;
+
+                llmSelect.innerHTML = ''; // Clear existing options
+
+                if (options && options.length > 0) {
+                    options.forEach(option => {
+                        const optElement = document.createElement('option');
+                        optElement.value = option.id;
+                        optElement.textContent = option.name;
+                        llmSelect.appendChild(optElement);
+                    });
+                    // Set default selected model
+                    const defaultOption = options.find(opt => opt.name === defaultModel);
+                    if (defaultOption) {
+                        llmSelect.value = defaultOption.id;
+                    } else if (options.length > 0) {
+                        llmSelect.value = options[0].id; // Fallback to first option
+                    }
+                } else {
+                    const optElement = document.createElement('option');
+                    optElement.value = '';
+                    optElement.textContent = 'No LLMs available';
+                    llmSelect.appendChild(optElement);
+                    llmSelect.disabled = true;
+                    sendButton.disabled = true;
+                    appendMessage('bot', 'Error: No LLM models configured on the backend.');
+                }
+
+                // NEW: Fetch default temperature and max_output_tokens from a new backend endpoint
+                const paramsResponse = await fetch('/llm-defaults');
+                if (!paramsResponse.ok) {
+                    throw new Error(`Failed to load LLM default parameters: ${paramsResponse.statusText}`);
+                }
+                const paramsData = await paramsResponse.json();
+                temperatureInput.value = paramsData.default_temperature;
+                maxOutputTokensInput.value = paramsData.default_max_output_tokens;
+
+
+            } catch (error) {
+                console.error('Error loading LLM options or defaults:', error);
+                appendMessage('bot', `Error loading configuration: ${error.message}`);
+                llmSelect.innerHTML = '<option value="">Error loading</option>';
+                llmSelect.disabled = true;
+                sendButton.disabled = true;
+            }
+        }
+
+
+        // --- Chatbot Logic (Frontend calls its own backend) ---
+        async function sendMessage() {
+            const userText = userInput.value.trim();
+            if (userText === '') return;
+
+            const promptTokens = estimateTokens(userText);
+
+            appendMessage('user', userText); // Display user message
+            userInput.value = '';
+            showLoading(true);
+
+            try {
+                // Read current values from input fields for sending to backend
+                const temperature = parseFloat(temperatureInput.value);
+                const maxOutputTokens = parseInt(maxOutputTokensInput.value, 10);
+                const selectedLlmId = llmSelect.value; 
+
+                // Basic frontend validation for parameters before sending
+                if (isNaN(temperature) || temperature < 0 || temperature > 1) {
+                    appendMessage('bot', 'Error: Temperature must be between 0.0 and 1.0.');
+                    showLoading(false);
+                    return;
+                }
+                if (isNaN(maxOutputTokens) || maxOutputTokens < 1) {
+                    appendMessage('bot', 'Error: Max Output Tokens must be a positive integer.');
+                    showLoading(false);
+                    return;
+                }
+                if (!selectedLlmId) {
+                     appendMessage('bot', 'Error: No LLM selected or available.');
+                     showLoading(false);
+                     return;
+                }
+
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        prompt: userText,
+                        temperature: temperature,        
+                        maxOutputTokens: maxOutputTokens,
+                        selectedLlmId: selectedLlmId     
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(`Chatbot backend error: ${errorData.error || response.statusText}`);
+                }
+
+                const data = await response.json();
+                const botResponseText = data.response;
+                const responseTokens = estimateTokens(botResponseText);
+                const totalTokens = promptTokens + responseTokens;
+
+                // Pass actual temperature and maxOutputTokens received from backend response
+                const paramsUsed = {
+                    temperature: data.temperature, 
+                    maxOutputTokens: data.maxOutputTokens
+                };
+
+                const modelUsed = data.modelUsed;
+
+                appendMessage(
+                    'bot', 
+                    botResponseText, 
+                    { promptTokens, responseTokens, totalTokens },
+                    paramsUsed,
+                    modelUsed
+                );
+
+            } catch (error) {
+                appendMessage('bot', `Error: ${error.message}`);
+                console.error('Frontend chat call failed:', error);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // Helper for copying to clipboard
+        function copyToClipboard(text) {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = 0;
+            document.body.appendChild(textarea);
+            textarea.focus();
+            textarea.select();
+            try {
+                document.execCommand('copy');
+            } catch (err) {
+                console.error('Failed to copy text: ', err);
+            }
+            document.body.removeChild(textarea);
+        }
+
+        // --- DOMContentLoaded for initial setup ---
+        document.addEventListener('DOMContentLoaded', () => {
+            // Assign DOM elements here to ensure they are loaded
+            chatMessagesDiv = document.getElementById('chatMessages');
+            userInput = document.getElementById('userInput');
+            sendButton = document.getElementById('sendButton');
+            temperatureInput = document.getElementById('temperatureInput'); 
+            maxOutputTokensInput = document.getElementById('maxOutputTokensInput'); 
+            llmSelect = document.getElementById('llmSelect'); 
+
+            // Attach event listeners after DOM elements are assigned
+            sendButton.addEventListener('click', sendMessage);
+            userInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+
+            // Initial state: enable inputs and buttons immediately.
+            // These will be temporarily disabled during loading.
+            userInput.disabled = false;
+            sendButton.disabled = false;
+            temperatureInput.disabled = false;
+            maxOutputTokensInput.disabled = false;
+            llmSelect.disabled = false; 
+
+            // Load LLM options AND default parameters when the DOM is ready
+            loadLlmOptionsAndDefaults();
+
+            userInput.focus();
+        });
+    </script>
+</body>
+</html>

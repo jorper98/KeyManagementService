@@ -1,0 +1,37 @@
+# Use a slim Python base image
+FROM python:3.11-slim
+
+# Set working directory inside the container
+WORKDIR /app
+
+# Install system dependencies needed for Python packages and curl for health checks
+RUN apt-get update && apt-get install -y \
+    gcc \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy only the requirements file first to leverage Docker caching
+COPY requirements.txt .
+
+# Install Python dependencies, leveraging build cache for pip
+# This ensures pip install runs if requirements.txt changes or cache is explicitly busted.
+RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir -r requirements.txt
+
+# Copy the application files
+COPY app.py .
+COPY index.html .
+COPY style.css .
+
+# Expose the port the Flask app will run on
+EXPOSE 5001
+
+# Create a non-root user for security best practices
+RUN useradd -m -u 1002 appuser && chown -R appuser:appuser /app
+USER appuser
+
+# Health check endpoint for the container
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:5001/ || exit 1 # Check if Flask serves index.html
+
+# Command to run the application using Gunicorn for production readiness
+CMD ["gunicorn", "-w", "2", "-b", "0.0.0.0:5001", "app:app"]
