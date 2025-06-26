@@ -110,34 +110,30 @@ body {
     color: #6a737d;
 }
 
-/* Parameters Display Styling - Made More Prominent & Not Bold */
+/* Parameters Display Styling */
 .params-display {
-    font-size: 0.85em; /* Make it a bit larger than token counter */
-    color: #333; /* Stronger color for higher visibility */
+    font-size: 0.75em; /* Match token counter size */
+    color: #5a5a5a; /* A bit darker for better contrast */
     margin-top: 2px; /* Space below token counter */
-    padding: 2px 6px; /* A bit more padding */
+    padding: 0 5px;
     line-height: 1.2;
     white-space: nowrap;
-    font-weight: normal; /* IMPORTANT: Ensure it's NOT bold */
-    background-color: rgba(255, 255, 255, 0.7); /* Subtle background for emphasis */
-    border-radius: 4px;
-    display: inline-block; /* To make background/padding work better and keep inline flow */
+    font-weight: normal; /* Ensure it's NOT bold */
+    opacity: 0.9; /* Slightly transparent */
 }
 
 .user .params-display {
     align-self: flex-end;
     text-align: right;
     padding-right: 5px;
-    color: rgba(255, 255, 255, 0.9);
-    background-color: rgba(0, 0, 0, 0.4); /* Darker background for user bubble */
+    color: rgba(255, 255, 255, 0.7);
 }
 
 .bot .params-display {
     align-self: flex-start;
     text-align: left;
     padding-left: 5px;
-    color: #333;
-    background-color: rgba(255, 255, 255, 0.7);
+    color: #5a5a5a;
 }
 
 
@@ -211,15 +207,19 @@ body {
 
 /* Input Area */
 .chat-input-area {
-    display: flex;
-    gap: 10px;
+    display: flex; /* Use flexbox for horizontal layout */
+    align-items: flex-end; /* Align items to the bottom */
+    gap: 10px; /* Space between elements */
     margin-top: 20px;
     padding-top: 10px;
     border-top: 1px solid #e0e6ed; /* Separator line */
+    flex-wrap: wrap; /* Allow wrapping on smaller screens */
 }
 
+/* Main message input field */
 .chat-input {
-    flex-grow: 1;
+    flex-grow: 1; /* Allow to grow and take available space */
+    min-width: 150px; /* Ensure it doesn't shrink too much */
     padding: 12px 16px;
     border: 2px solid #cbd5e0;
     border-radius: 12px;
@@ -233,6 +233,42 @@ body {
     box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2);
 }
 
+/* Styling for the LLM parameters input group */
+.llm-params-group {
+    display: flex; /* Use flex for internal layout */
+    gap: 10px; /* Space between temp and max inputs */
+    align-items: center; /* Vertically align label and input */
+    flex-shrink: 0; /* Prevent this group from shrinking excessively */
+    flex-wrap: wrap; /* Allow wrapping on very small screens */
+    margin-bottom: 5px; /* Small vertical margin for alignment in flex-wrap */
+}
+
+.form-group-inline {
+    display: flex; /* Flex for label and input on same line */
+    align-items: center; /* Vertically align label and input */
+    gap: 5px; /* Space between label and input */
+}
+
+.form-group-inline label {
+    font-size: 0.9em;
+    color: #555;
+    white-space: nowrap; /* Keep label on one line */
+}
+
+.small-param-input {
+    width: 60px; /* Fixed small width for parameter inputs */
+    padding: 8px 10px;
+    border: 1px solid #cbd5e0;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    text-align: center;
+}
+
+.small-param-input:focus {
+    border-color: #667eea;
+    box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+}
+
 .send-button {
     background: linear-gradient(90deg, #28a745, #218838); /* Green gradient */
     color: white;
@@ -243,6 +279,8 @@ body {
     cursor: pointer;
     transition: transform 0.2s, box-shadow 0.2s;
     box-shadow: 0 4px 10px rgba(40, 167, 69, 0.25);
+    flex-shrink: 0; /* Prevent button from shrinking */
+    margin-bottom: 5px; /* Small vertical margin for alignment in flex-wrap */
 }
 
 .send-button:hover {
@@ -292,8 +330,17 @@ body {
         font-size: 0.9rem;
     }
     .chat-input-area {
-        flex-direction: column;
+        flex-direction: column; /* Stack elements vertically */
         gap: 15px;
+    }
+    .chat-input {
+        width: 100%; /* Full width */
+        min-width: unset;
+    }
+    .llm-params-group {
+        flex-direction: row; /* Keep parameters inline on small screens */
+        justify-content: space-around; /* Distribute evenly */
+        width: 100%; /* Take full width */
     }
     .send-button {
         width: 100%;

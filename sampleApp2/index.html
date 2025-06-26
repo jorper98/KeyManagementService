@@ -12,7 +12,7 @@
 <body>
     <div class="chat-container">
         <div class="chat-header">
-            API Key Demo SampleApp2 - Chatbot
+            API Key Demo SampleApp2 - Chatbot 🤖
         </div>
         <div class="chat-messages" id="chatMessages">
             <div class="message-group bot">
@@ -20,16 +20,33 @@
             </div>
         </div>
         <div class="chat-input-area">
+            <!-- Main message input field -->
             <input type="text" id="userInput" class="chat-input" placeholder="Type your message...">
+
+            <!-- LLM Generation Parameters input fields -->
+            <div class="llm-params-group">
+                <div class="form-group-inline">
+                    <label for="temperatureInput">Temp:</label>
+                    <input type="number" id="temperatureInput" value="0.7" min="0.0" max="1.0" step="0.1" class="small-param-input">
+                </div>
+                <div class="form-group-inline">
+                    <label for="maxOutputTokensInput">Max:</label>
+                    <input type="number" id="maxOutputTokensInput" value="200" min="1" step="1" class="small-param-input">
+                </div>
+            </div>
+            
+            <!-- Send button -->
             <button id="sendButton" class="send-button">Send</button>
         </div>
     </div>
 
     <script>
         // DOM Elements
-        let chatMessagesDiv; // Assigned in DOMContentLoaded
-        let userInput;       // Assigned in DOMContentLoaded
-        let sendButton;      // Assigned in DOMContentLoaded
+        let chatMessagesDiv;
+        let userInput;
+        let sendButton;
+        let temperatureInput;
+        let maxOutputTokensInput;
 
         // Helper function to estimate token count (simple word count approximation)
         function estimateTokens(text) {
@@ -67,11 +84,11 @@
                 messageGroup.appendChild(tokenCounter);
             }
 
-            // NEW: Add parameters information if provided (for bot responses)
+            // Add parameters information if provided (for bot responses)
             if (paramsInfo && sender === 'bot') {
                 const paramsDisplay = document.createElement('div');
                 paramsDisplay.classList.add('params-display');
-                paramsDisplay.textContent = `(Temp: ${paramsInfo.temperature}, Max: ${paramsInfo.maxOutputTokens})`; // Corrected format and textContent
+                paramsDisplay.textContent = `(Temp: ${paramsInfo.temperature}, Max: ${paramsInfo.maxOutputTokens})`;
                 messageGroup.appendChild(paramsDisplay);
             }
 
@@ -86,10 +103,14 @@
                 sendButton.innerHTML = '<div class="loading-spinner"></div>';
                 sendButton.disabled = true;
                 userInput.disabled = true;
+                temperatureInput.disabled = true; // Disable params during loading
+                maxOutputTokensInput.disabled = true; // Disable params during loading
             } else {
                 sendButton.innerHTML = 'Send';
                 sendButton.disabled = false;
                 userInput.disabled = false;
+                temperatureInput.disabled = false; // Enable params after loading
+                maxOutputTokensInput.disabled = false; // Enable params after loading
                 userInput.focus();
             }
         }
@@ -106,10 +127,30 @@
             showLoading(true);
 
             try {
+                // Read current values from input fields for sending to backend
+                const temperature = parseFloat(temperatureInput.value);
+                const maxOutputTokens = parseInt(maxOutputTokensInput.value, 10);
+
+                // Basic frontend validation for parameters before sending
+                if (isNaN(temperature) || temperature < 0 || temperature > 1) {
+                    appendMessage('bot', 'Error: Temperature must be between 0.0 and 1.0.');
+                    showLoading(false);
+                    return;
+                }
+                if (isNaN(maxOutputTokens) || maxOutputTokens < 1) {
+                    appendMessage('bot', 'Error: Max Output Tokens must be a positive integer.');
+                    showLoading(false);
+                    return;
+                }
+
                 const response = await fetch('/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prompt: userText }) 
+                    body: JSON.stringify({
+                        prompt: userText,
+                        temperature: temperature,        // Pass parameter from UI
+                        maxOutputTokens: maxOutputTokens // Pass parameter from UI
+                    })
                 });
 
                 if (!response.ok) {
@@ -132,7 +173,7 @@
                     'bot', 
                     botResponseText, 
                     { promptTokens, responseTokens, totalTokens },
-                    paramsUsed // Pass parameters received from backend for display
+                    paramsUsed
                 );
 
             } catch (error) {
@@ -166,6 +207,8 @@
             chatMessagesDiv = document.getElementById('chatMessages');
             userInput = document.getElementById('userInput');
             sendButton = document.getElementById('sendButton');
+            temperatureInput = document.getElementById('temperatureInput'); // Assign
+            maxOutputTokensInput = document.getElementById('maxOutputTokensInput'); // Assign
 
             // Attach event listeners after DOM elements are assigned
             sendButton.addEventListener('click', sendMessage);
@@ -178,7 +221,13 @@
             // Initial state: enable inputs and buttons immediately.
             userInput.disabled = false;
             sendButton.disabled = false;
+            temperatureInput.disabled = false;
+            maxOutputTokensInput.disabled = false;
             userInput.focus();
+
+            // Set initial values from constants (or backend if loaded dynamically)
+            temperatureInput.value = 0.7; // Default initial value
+            maxOutputTokensInput.value = 200; // Default initial value
         });
     </script>
 </body>

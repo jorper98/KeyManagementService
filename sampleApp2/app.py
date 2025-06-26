@@ -21,8 +21,8 @@ logger.info(f"ENV KEYSTORE_API_URL: {os.environ.get('KEYSTORE_API_URL', 'NOT SET
 logger.info(f"ENV KEYSTORE_JWT_TOKEN: {'SET' if os.environ.get('KEYSTORE_JWT_TOKEN') else 'NOT SET'}")
 logger.info(f"ENV GENERATIVE_AI_KEY_NAME: {os.environ.get('GENERATIVE_AI_KEY_NAME', 'NOT SET')}")
 logger.info(f"ENV GENERATIVE_AI_MODEL: {os.environ.get('GENERATIVE_AI_MODEL', 'NOT SET')}")
-logger.info(f"ENV LLM_TEMPERATURE: {os.environ.get('LLM_TEMPERATURE', 'NOT SET')}")
-logger.info(f"ENV LLM_MAX_OUTPUT_TOKENS: {os.environ.get('LLM_MAX_OUTPUT_TOKENS', 'NOT SET')}")
+logger.info(f"ENV LLM_TEMPERATURE (Default): {os.environ.get('LLM_TEMPERATURE', 'NOT SET')}") # Clarify default
+logger.info(f"ENV LLM_MAX_OUTPUT_TOKENS (Default): {os.environ.get('LLM_MAX_OUTPUT_TOKENS', 'NOT SET')}") # Clarify default
 logger.info(f"--- End app.py Startup Environment Check ---")
 
 
@@ -32,9 +32,9 @@ KEYSTORE_JWT_TOKEN = os.environ.get('KEYSTORE_JWT_TOKEN')
 GENERATIVE_AI_KEY_NAME = os.environ.get('GENERATIVE_AI_KEY_NAME')
 GENERATIVE_AI_MODEL = os.environ.get('GENERATIVE_AI_MODEL', 'gemini-2.0-flash')
 
-# LLM Generation Parameters from Environment Variables
-LLM_TEMPERATURE = float(os.environ.get('LLM_TEMPERATURE', 0.7))
-LLM_MAX_OUTPUT_TOKENS = int(os.environ.get('LLM_MAX_OUTPUT_TOKENS', 200))
+# LLM Generation Parameters from Environment Variables (used as defaults if not overridden by frontend)
+DEFAULT_LLM_TEMPERATURE = float(os.environ.get('LLM_TEMPERATURE', 0.7))
+DEFAULT_LLM_MAX_OUTPUT_TOKENS = int(os.environ.get('LLM_MAX_OUTPUT_TOKENS', 200))
 
 # CRITICAL WARNINGS based on environment setup
 if not KEYSTORE_JWT_TOKEN:
@@ -110,9 +110,30 @@ def chat():
     data = request.get_json()
     user_prompt = data.get('prompt')
 
-    # Parameters for LLM (from environment variables)
-    temperature_param = LLM_TEMPERATURE
-    max_output_tokens_param = LLM_MAX_OUTPUT_TOKENS
+    # NEW: Accept and validate temperature and maxOutputTokens from frontend
+    # Use defaults if not provided or invalid
+    temperature_param = DEFAULT_LLM_TEMPERATURE
+    max_output_tokens_param = DEFAULT_LLM_MAX_OUTPUT_TOKENS
+
+    if 'temperature' in data:
+        try:
+            temp_val = float(data['temperature'])
+            if 0.0 <= temp_val <= 1.0:
+                temperature_param = temp_val
+            else:
+                logger.warning(f"Invalid temperature value from frontend: {data['temperature']}. Using default: {DEFAULT_LLM_TEMPERATURE}")
+        except (ValueError, TypeError):
+            logger.warning(f"Non-numeric temperature value from frontend: {data['temperature']}. Using default: {DEFAULT_LLM_TEMPERATURE}")
+    
+    if 'maxOutputTokens' in data:
+        try:
+            max_val = int(data['maxOutputTokens'])
+            if max_val >= 1: # Assuming minimum 1 token output
+                max_output_tokens_param = max_val
+            else:
+                logger.warning(f"Invalid maxOutputTokens value from frontend: {data['maxOutputTokens']}. Using default: {DEFAULT_LLM_MAX_OUTPUT_TOKENS}")
+        except (ValueError, TypeError):
+            logger.warning(f"Non-integer maxOutputTokens value from frontend: {data['maxOutputTokens']}. Using default: {DEFAULT_LLM_MAX_OUTPUT_TOKENS}")
 
     if not user_prompt:
         logger.warning("No prompt provided in request.")
@@ -174,15 +195,13 @@ def chat():
 
 if __name__ == '__main__':
     logger.info("Starting SampleApp2 Chatbot Backend...")
-    # This block will log environment values as seen by Python at startup
     logger.info(f"Keystore API Base: {KEYSTORE_API_BASE}")
     logger.info(f"Generative AI Key Name: {GENERATIVE_AI_KEY_NAME}")
     logger.info(f"Generative AI Model: {GENERATIVE_AI_MODEL}")
-    logger.info(f"LLM Temperature (configured): {LLM_TEMPERATURE}") # New log line
-    logger.info(f"LLM Max Output Tokens (configured): {LLM_MAX_OUTPUT_TOKENS}") # New log line
+    logger.info(f"LLM Temperature (configured): {DEFAULT_LLM_TEMPERATURE}") # Log default
+    logger.info(f"LLM Max Output Tokens (configured): {DEFAULT_LLM_MAX_OUTPUT_TOKENS}") # Log default
     
     if app.debug:
         app.run(debug=True, host='0.0.0.0', port=5001)
     else:
         logger.info("Flask debug mode is OFF. Expecting Gunicorn to manage the server.")
-
